@@ -24,6 +24,7 @@ stop_times = {schedule_start: {} for schedule_start in schedule_starts}
 csv_file = glob("Recent_Transit_On-Time_Performance_Data_*.csv")[0]
 with open(csv_file) as f:
     try:
+        wrong_service_ids = 0
         for row in tqdm(csv.DictReader(f), total=line_count(csv_file), mininterval=0.5):
             match row["Day Type"]:
                 case "Weekday":
@@ -55,27 +56,38 @@ with open(csv_file) as f:
             trip_id, stop_sequence = stop_trips[trip_key]
 
             service_day = offset_timestamp // 86400 - 17167 # Days since 2017-01-01 (first year with data)
+
+            day_of_week = (service_day - 1) % 7 # 0=Monday, 6=Sunday, 2017-01-01 was a Sunday
+            if (day_of_week < 5 and service_id != 1) or (day_of_week == 5 and service_id != 2) or (day_of_week == 6 and service_id != 3):
+                # print(f"Skipping trip {trip_id} on service day {service_day} (day of week {day_of_week}) with service_id {service_id}")
+                wrong_service_ids += 1
+                continue # Skip trips that don't match the day of the week
+
             stop_times[schedule].setdefault((trip_id, service_day), []).append((stop_sequence, timestamp + int(row["Deviation"].replace(",", "")), int(row["Stop Number"]), direction_index, time_struct.tm_hour))
 
     except KeyboardInterrupt:
         pass # Allow early exit for debugging
 
+print(f"Found and excluded {wrong_service_ids} rows with wrong day of week")
+
 for schedule_start in stop_times:
     stop_segs = {}
-    impossible_segs = set()
-    for trip_and_day in stop_times[schedule_start]:
+    same_stop_segs = set()
+    for trip_and_day in tqdm(stop_times[schedule_start], desc=f"Processing schedule {schedule_start}", total=len(stop_times[schedule_start]), mininterval=0.5):
         trip_stop_times = sorted(stop_times[schedule_start][trip_and_day], key=lambda x: x[0])
         for prev, curr in zip(trip_stop_times, trip_stop_times[1:]):
+
             if prev[2] == curr[2]:
-                impossible_segs.add(f"{prev[2]}-{curr[2]}-{curr[3]}")
+                same_stop_segs.add(f"{prev[2]}-{curr[2]}-{curr[3]}")
                 continue # Skip segments that start and end at the same stop
+
             stop_segs.setdefault(
                 f"{prev[2]}-{curr[2]}-{curr[3]}", {}             # stop_from-stop_to-direction_index
             ).setdefault(
                 trip_and_day[1], [[] for _ in range(24)]         # service_day, list of 24 lists for each hour
             )[(curr[4] - 3) % 24].append(str(curr[1] - prev[1])) # [3am, 4am, ..., 2am]
 
-    print(f"Found {len(impossible_segs)} impossible segments")
+    print(f"Found and excluded {len(same_stop_segs)} same-stop segments")
 
     for seg_key in stop_segs:
         for service_day in stop_segs[seg_key]:
