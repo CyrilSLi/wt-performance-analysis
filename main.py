@@ -77,7 +77,7 @@ with open(csv_file) as f:
                 wrong_service_ids += 1
                 continue # Skip trips that don't match the day of the week
 
-            stop_times[schedule].setdefault((trip_id, service_day), []).append((stop_sequence, timestamp + int(row["Deviation"].replace(",", "")), int(row["Stop Number"]), direction_index, time_struct.tm_hour))
+            stop_times[schedule].setdefault((trip_id, service_day), []).append((stop_sequence, timestamp - int(row["Deviation"].replace(",", "")), int(row["Stop Number"]), direction_index, time_struct.tm_hour))
 
     except KeyboardInterrupt:
         pass # Allow early exit for debugging
