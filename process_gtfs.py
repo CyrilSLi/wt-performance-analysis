@@ -9,9 +9,6 @@ from tqdm import tqdm
 from utils import line_count
 
 
-""" for i in glob(".cache/*"):
-    if i != ".cache/.gitkeep":
-        os.remove(i) """
 
 for gtfs_zip in glob("mdb-717-*.zip"):
     for i in glob(".gtfs/*"):

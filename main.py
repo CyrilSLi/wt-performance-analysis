@@ -1,5 +1,6 @@
 # Built-in modules
 import calendar, csv, json, pickle, time
+from datetime import datetime
 from glob import glob
 
 # Third-party modules
@@ -18,10 +19,16 @@ for i in reversed(sorted(glob(".cache/stop_trips-*.pkl"))):
 
 
 
-
 stop_times = {schedule_start: {} for schedule_start in schedule_starts}
 
-csv_file = glob("Recent_Transit_On-Time_Performance_Data_*.csv")[0]
+csv_files = glob("Recent_Transit_On-Time_Performance_Data_*.csv") + glob("on_time_performance_*.csv")
+if len(csv_files) == 0:
+    raise SystemExit("No CSV files found.")
+elif len(csv_files) == 1:
+    csv_file = csv_files[0]
+else:
+    csv_file = csv_files[int(input("Num\tFile\n" + "\n".join(f"{i}\t{f}" for i, f in enumerate(csv_files)) + "\nSelect the CSV file to process: "))]
+
 with open(csv_file) as f:
     try:
         wrong_service_ids = 0
@@ -36,10 +43,17 @@ with open(csv_file) as f:
                 case _:
                     continue # Skip holidays and other irregular days
 
-            time_struct = time.strptime(row["Scheduled Time"], "%Y %b %d %I:%M:%S %p")
+            scheduled_time = row["Scheduled Time"]
+            if (" " in scheduled_time): # Human-readable format
+                time_struct = time.strptime(scheduled_time, "%Y %b %d %I:%M:%S %p")
+            else: # ISO8601 format
+                time_struct = datetime.fromisoformat(scheduled_time).timetuple()
             timestamp = int(calendar.timegm(time_struct))
             offset_timestamp = timestamp - 10800 # Service day starts at 3am
+
             schedule = next((i for i in schedule_starts if i < offset_timestamp), None)
+            if schedule is None:
+                raise ValueError(f"No schedule found for timestamp {offset_timestamp} (earliest schedule is {min(schedule_starts)})")
 
             directions, stop_trips = all_info[schedule]
         
