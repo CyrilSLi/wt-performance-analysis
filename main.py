@@ -87,7 +87,7 @@ print(f"Found and excluded {wrong_service_ids} rows with wrong day of week")
 for schedule_start in stop_times:
     stop_segs = {}
     same_stop_segs = set()
-    stats = [{"Segments": set(), "Num Rows": 0, "Max Rows": 0, "Min Time": float("inf"), "Max Time": float("-inf")} for _ in range(24)]
+    stats = [{"Segments": set(), "Num Rows": 0, "Max Rows": 0, "SameStop": 0, "Min Time": float("inf"), "Max Time": float("-inf")} for _ in range(24)]
 
     for trip_and_day in tqdm(stop_times[schedule_start], desc=f"Processing schedule {schedule_start}", total=len(stop_times[schedule_start]), mininterval=0.5):
         trip_stop_times = sorted(stop_times[schedule_start][trip_and_day], key=lambda x: x[0])
@@ -96,23 +96,29 @@ for schedule_start in stop_times:
             hour = hour = (curr[4] - 3) % 24
             time_diff = curr[1] - prev[1]
             segment = f"{prev[2]}-{curr[2]}-{curr[3]}"
+            hour_stats = stats[hour]
 
             if prev[2] == curr[2]:
                 same_stop_segs.add(segment)
+                hour_stats["SameStop"] += 1
                 continue # Skip segments that start and end at the same stop
 
-            stop_segs.setdefault(
+            seg_hour_entry = stop_segs.setdefault(
                 segment, {}                              # stop_from-stop_to-direction_index
             ).setdefault(
                 trip_and_day[1], [[] for _ in range(24)] # service_day, list of 24 lists for each hour
-            )[hour].append(str(time_diff))               # [3am, 4am, ..., 2am]
+            )[hour]                                      # [3am, 4am, ..., 2am]
+            seg_hour_entry.append(str(time_diff))
 
-            hour_stats = stats[hour]
             hour_stats["Segments"].add(segment)
             hour_stats["Num Rows"] += 1
-            hour_stats["Max Rows"] = max(hour_stats["Max Rows"], len(stop_segs[segment][trip_and_day[1]][hour]))
-            hour_stats["Min Time"] = min(hour_stats["Min Time"], time_diff)
-            hour_stats["Max Time"] = max(hour_stats["Max Time"], time_diff)
+            # Use if statements instead of max/min for performance
+            if len(seg_hour_entry) > hour_stats["Max Rows"]:
+                hour_stats["Max Rows"] = len(seg_hour_entry)
+            if time_diff < hour_stats["Min Time"]:
+                hour_stats["Min Time"] = time_diff
+            if time_diff > hour_stats["Max Time"]:
+                hour_stats["Max Time"] = time_diff
 
     print(f"Found and excluded {len(same_stop_segs)} same-stop segments")
 
