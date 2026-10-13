@@ -127,7 +127,7 @@ for schedule_start in stop_times:
         hour["Segments"] = len(hour["Segments"])
     print(
         f"Wrote .cache/stop_segs-{schedule_start}.json, Stats:\n\n" +
-        f"Total Segments: {sum(hour['Segments'] for hour in stats)}, Total Rows: {sum(hour['Num Rows'] for hour in stats)}\n" +
+        f"Totals: {len(stop_segs)} segments, {sum(hour['Segments'] for hour in stats)} hour-segments, {sum(hour['Num Rows'] for hour in stats)} rows\n" +
         f'Hour\t{"\t".join(stats[0].keys()).expandtabs(12)}\n' +
-        "\n".join(f"{(i + 3) % 24}\t" + "\t".join(str(v) for v in hour.values()).expandtabs(12) for i, hour in enumerate(stats)) + "\n"
+        "\n".join(f"{((i + 3) % 24):02d}\t" + "\t".join(str(v) for v in hour.values()).expandtabs(12) for i, hour in enumerate(stats)) + "\n"
     )
