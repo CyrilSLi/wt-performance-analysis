@@ -87,19 +87,32 @@ print(f"Found and excluded {wrong_service_ids} rows with wrong day of week")
 for schedule_start in stop_times:
     stop_segs = {}
     same_stop_segs = set()
+    stats = [{"Segments": set(), "Num Rows": 0, "Max Rows": 0, "Min Time": float("inf"), "Max Time": float("-inf")} for _ in range(24)]
+
     for trip_and_day in tqdm(stop_times[schedule_start], desc=f"Processing schedule {schedule_start}", total=len(stop_times[schedule_start]), mininterval=0.5):
         trip_stop_times = sorted(stop_times[schedule_start][trip_and_day], key=lambda x: x[0])
         for prev, curr in zip(trip_stop_times, trip_stop_times[1:]):
 
+            hour = hour = (curr[4] - 3) % 24
+            time_diff = curr[1] - prev[1]
+            segment = f"{prev[2]}-{curr[2]}-{curr[3]}"
+
             if prev[2] == curr[2]:
-                same_stop_segs.add(f"{prev[2]}-{curr[2]}-{curr[3]}")
+                same_stop_segs.add(segment)
                 continue # Skip segments that start and end at the same stop
 
             stop_segs.setdefault(
-                f"{prev[2]}-{curr[2]}-{curr[3]}", {}             # stop_from-stop_to-direction_index
+                segment, {}                              # stop_from-stop_to-direction_index
             ).setdefault(
-                trip_and_day[1], [[] for _ in range(24)]         # service_day, list of 24 lists for each hour
-            )[(curr[4] - 3) % 24].append(str(curr[1] - prev[1])) # [3am, 4am, ..., 2am]
+                trip_and_day[1], [[] for _ in range(24)] # service_day, list of 24 lists for each hour
+            )[hour].append(str(time_diff))               # [3am, 4am, ..., 2am]
+
+            hour_stats = stats[hour]
+            hour_stats["Segments"].add(segment)
+            hour_stats["Num Rows"] += 1
+            hour_stats["Max Rows"] = max(hour_stats["Max Rows"], len(stop_segs[segment][trip_and_day[1]][hour]))
+            hour_stats["Min Time"] = min(hour_stats["Min Time"], time_diff)
+            hour_stats["Max Time"] = max(hour_stats["Max Time"], time_diff)
 
     print(f"Found and excluded {len(same_stop_segs)} same-stop segments")
 
@@ -110,4 +123,11 @@ for schedule_start in stop_times:
     with open(f".cache/stop_segs-{schedule_start}.json", "w") as f:
         json.dump(stop_segs, f, sort_keys=True, indent=1) # separators=(",", ":"))
 
-    print(f"Wrote .cache/stop_segs-{schedule_start}.json with {len(stop_segs)} stop segments")
+    for hour in stats:
+        hour["Segments"] = len(hour["Segments"])
+    print(
+        f"Wrote .cache/stop_segs-{schedule_start}.json, Stats:\n\n" +
+        f"Total Segments: {sum(hour['Segments'] for hour in stats)}, Total Rows: {sum(hour['Num Rows'] for hour in stats)}\n" +
+        f'Hour\t{"\t".join(stats[0].keys()).expandtabs(12)}\n' +
+        "\n".join(f"{(i + 3) % 24}\t" + "\t".join(str(v) for v in hour.values()).expandtabs(12) for i, hour in enumerate(stats)) + "\n"
+    )
