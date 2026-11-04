@@ -108,7 +108,7 @@ for schedule_start in stop_times:
             ).setdefault(
                 trip_and_day[1], [[] for _ in range(24)]            # service_day, list of 24 lists for each hour
             )[hour]                                                 # [3am, 4am, ..., 2am]
-            seg_hour_entry.append(f"{time_diff}_{trip_and_day[0]}") # time_diff-trip_id
+            seg_hour_entry.append(f"{time_diff}_{trip_and_day[0]}") # time_diff_trip_id
 
             hour_stats["Segments"].add(segment)
             hour_stats["Num Rows"] += 1
