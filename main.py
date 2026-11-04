@@ -104,11 +104,11 @@ for schedule_start in stop_times:
                 continue # Skip segments that start and end at the same stop
 
             seg_hour_entry = stop_segs.setdefault(
-                segment, {}                              # stop_from-stop_to-direction_index
+                segment, {}                                         # stop_from-stop_to-direction_index
             ).setdefault(
-                trip_and_day[1], [[] for _ in range(24)] # service_day, list of 24 lists for each hour
-            )[hour]                                      # [3am, 4am, ..., 2am]
-            seg_hour_entry.append(str(time_diff))
+                trip_and_day[1], [[] for _ in range(24)]            # service_day, list of 24 lists for each hour
+            )[hour]                                                 # [3am, 4am, ..., 2am]
+            seg_hour_entry.append(f"{time_diff}_{trip_and_day[0]}") # time_diff-trip_id
 
             hour_stats["Segments"].add(segment)
             hour_stats["Num Rows"] += 1

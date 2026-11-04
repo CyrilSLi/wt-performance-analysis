@@ -1,12 +1,13 @@
 # Built-in modules
 import calendar, csv, os, pickle, time
+from base64 import b64encode
 from glob import glob
 from zipfile import ZipFile
 
 # Third-party modules
 from tqdm import tqdm
 
-from utils import line_count
+from utils import base64_int, line_count
 
 
 
@@ -49,7 +50,7 @@ for gtfs_zip in glob("mdb-717-*.zip"):
             trip_key = int(f"{row['stop_id']}{arrival_time}{trips[row['trip_id']]}")
             if trip_key in stop_trips:
                 raise ValueError(f"Duplicate trip key: {trip_key}")
-            stop_trips[trip_key] = (int(row["trip_id"]), int(row["stop_sequence"]))
+            stop_trips[trip_key] = (base64_int(row["trip_id"]), int(row["stop_sequence"]))
     
     with open(f".cache/stop_trips-{start_ts}.pkl", "wb") as f:
         pickle.dump((directions, stop_trips), f)
