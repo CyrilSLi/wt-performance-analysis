@@ -55,7 +55,7 @@ with open(csv_file) as f:
             if schedule is None:
                 raise ValueError(f"No schedule found for timestamp {offset_timestamp} (earliest schedule is {min(schedule_starts)})")
 
-            directions, stop_trips = all_info[schedule]
+            directions, stop_trips, dupe_stops, dupe_stops_prefix = all_info[schedule]
         
             direction_key = f'{service_id}-{row["Route Number"]} {row["Route Destination"]}'
             if direction_key not in directions:
@@ -66,7 +66,14 @@ with open(csv_file) as f:
 
             trip_key = int(f'{row["Stop Number"]}{time_struct.tm_hour:02d}{time_struct.tm_min:02d}{time_struct.tm_sec:02d}{direction_index}')
             if trip_key not in stop_trips:
-                raise ValueError(f"Unknown trip: {trip_key}")
+                for level in range(1, dupe_stops.get(row["Stop Number"], 0) + 1): # Test whether this row is a duplicate stop
+                    prefix = f"{level}{dupe_stops_prefix}"
+                    if int(f"{prefix}{trip_key}") in stop_trips:
+                        trip_key = int(f"{prefix}{trip_key}")
+                        row["Stop Number"] = f"{prefix}{row['Stop Number']}"
+                        break
+                else:
+                    raise ValueError(f"Unknown trip: {trip_key}")
             trip_id, stop_sequence = stop_trips[trip_key]
 
             service_day = offset_timestamp // 86400 - 17167 # Days since 2017-01-01 (first year with data)
