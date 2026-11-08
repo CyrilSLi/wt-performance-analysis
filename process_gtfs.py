@@ -1,5 +1,5 @@
 # Built-in modules
-import calendar, csv, os, pickle, time
+import calendar, csv, json, os, pickle, time
 from base64 import b64encode
 from glob import glob
 from zipfile import ZipFile
@@ -54,3 +54,9 @@ for gtfs_zip in glob("mdb-717-*.zip"):
     
     with open(f".cache/stop_trips-{start_ts}.pkl", "wb") as f:
         pickle.dump((directions, stop_trips), f)
+
+    with open(".gtfs/stops.txt") as f_stops, open(f".cache/stops-{start_ts}.json", "w") as f:
+        stops = {}
+        for row in csv.DictReader(f_stops):
+            stops[row["stop_id"]] = [row["stop_name"], float(row["stop_lat"]), float(row["stop_lon"])]
+        json.dump(stops, f, indent=1, sort_keys=True)
