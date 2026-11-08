@@ -4,8 +4,134 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WT Performance Analysis</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1/dist/MarkerCluster.Default.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1/dist/leaflet.markercluster.min.js"></script>
+    <script src=".cache/data.js"></script> <!-- TODO: Replace with actual data source -->
+    <style>
+    </style>
 </head>
 <body>
-    
+    <H1>WT Performance Analysis</H1>
+    <button id="reset">Reset</button>
+    <div id="map" style="width: 100%; height: 600px;"></div>
+    <script>
+        const scheduleId = 1782000000; // TODO: User-selectable schedule
+
+        const { directions, services, stop_segs } = window.perfData.schedules[scheduleId];
+        const stops = window.perfData.stops;
+
+        const map = L.map("map", {
+            fadeAnimation: false,
+            markerZoomAnimation: false,
+        });
+        if (localStorage.getItem("mapState")) {
+            const { center, zoom } = JSON.parse(localStorage.getItem("mapState"));
+            map.setView(center, zoom);
+        } else {
+            map.fitBounds([[49.71, -97.35], [50.00, -96.95]]);
+        }
+
+        const isRetina = L.Browser.retina;
+        L.tileLayer(`https://trn-maps.winnipeg.ca/day${isRetina ? "@2x" : ""}/{z}/{x}/{y}.png`, {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxNativeZoom: 19,
+            maxZoom: 22,
+            tileSize: isRetina ? 128 : 256,
+            zoomOffset: isRetina ? 1 : 0,
+            detectRetina: false,
+        }).addTo(map);
+
+        map.on("moveend", () => {
+            localStorage.setItem("mapState", JSON.stringify({
+                center: map.getCenter(),
+                zoom: map.getZoom()
+            }));
+        });
+
+        function markerClusterGroup() {
+            return new L.markerClusterGroup({
+                maxClusterRadius: 50,
+                spiderfyOnMaxZoom: false,
+                disableClusteringAtZoom: 15,
+            });
+        }
+
+        const allStops = markerClusterGroup();
+        const selectedStops = markerClusterGroup().addTo(map);
+        let firstStopMarker, secondStopMarker;
+
+        /* const WTIcon = L.icon({
+            iconUrl: "data:image/png;base64,[...]",
+            iconSize: [20, 20],
+            shadowSize: [0, 0],
+            iconAnchor: [10, 10],
+            shadowAnchor: [0, 0],
+            popupAnchor: [0, -10]
+        }) */
+        const stopMarker = (stopId, fnName = null) => new L.marker([stops[stopId][1], stops[stopId][2]]).bindPopup(
+            `<b>${stops[stopId][0]}</b><br>Stop ID: <a href="https://winnipegtransit.com/stops/${stopId}" target="_blank" rel="noopener noreferrer">${stopId}</a>` +
+            (fnName ? `<br><button onclick="${fnName}('${stopId}')">Select this stop</button>` : "")
+        );
+
+        const firstStopIds = new Set(Object.keys(stop_segs));
+        const firstStops = Object.fromEntries(Object.entries(window.perfData.stops).filter(([stopId]) => firstStopIds.has(stopId)));
+        allStops.addLayers(Object.keys(firstStops).map(stopId => stopMarker(stopId, "selectFirstStop")));
+
+        let firstStopId, secondStopId;
+
+        function resetMap() {
+            firstStopMarker?.remove();
+            secondStopMarker?.remove();
+            firstStopMarker = secondStopMarker = null;
+            firstStopId = secondStopId = null;
+            selectedStops.clearLayers();
+            allStops.addTo(map);
+            document.getElementById("reset").style.visibility = "hidden";
+        }
+        document.getElementById("reset").addEventListener("click", resetMap);
+        resetMap();
+
+        function selectFirstStop(stopId) {
+            map.removeLayer(allStops);
+            firstStopMarker = stopMarker(stopId).addTo(map);
+            firstStopMarker._icon.style.filter = "hue-rotate(140deg)"; // Change color to red
+
+            const stopDirs = [...new Set(Object.values(stop_segs[stopId]).flatMap(Object.keys))];
+            console.log(stopDirs, stopDirs.map(dirId => directions[dirId % directions.length]));
+
+            let secondStops = [], searchList = [[stopId, ...stopDirs]];
+            while (searchList.length > 0) {
+                let [currentStop, ...currentDirs] = searchList.pop();
+                if (!stop_segs[currentStop]) {
+                    continue;
+                }
+                Object.entries(stop_segs[currentStop]).forEach(([toStop, dirs]) => {
+                    currentDirs = new Set(currentDirs);
+                    if (Object.keys(dirs).some(dirId => currentDirs.has(dirId))) {
+                        const nextSearch = [toStop, ...Object.keys(dirs).filter(dirId => currentDirs.has(dirId))];
+                        if (!secondStops.includes(nextSearch.join(","))) {
+                            searchList.push(nextSearch);
+                            secondStops.push(nextSearch.join(","));
+                        }
+                    }
+                });
+            }
+            secondStops = [...new Set(secondStops.map(s => s.split(",")[0]))];
+
+            secondStops.forEach(stopId => {
+                stopMarker(stopId, "selectSecondStop").addTo(selectedStops);
+            });
+
+            document.getElementById("reset").style.visibility = "visible";
+        }
+
+        function selectSecondStop(stopId) {
+            selectedStops.clearLayers();
+            secondStopMarker = stopMarker(stopId).addTo(map);
+            secondStopMarker._icon.style.filter = "hue-rotate(270deg)"; // Change color to green
+        }
+    </script>
 </body>
 </html>
