@@ -12,14 +12,22 @@
     <script src="https://cdn.jsdelivr.net/npm/dagre-d3@0.6.4/dist/dagre-d3.min.js"></script>
     <script src=".cache/data.js"></script> <!-- TODO: Replace with actual data source -->
     <style>
+        #map {
+            width: 100%;
+            height: 600px;
+        }
+        #dag {
+            width: 100% !important;
+            height: 600px !important;
+        }
     </style>
 </head>
 <body>
     <H1>WT Performance Analysis</H1>
     <button id="reset">Reset</button>
     <button id="export-svg">Export SVG</button>
-    <div id="map" style="width: 100%; height: 600px;"></div>
-    <svg id="dag" style="width: 100%; height: 600px;"></svg>
+    <div id="map"></div>
+    <svg id="dag" preserveAspectRatio="xMidYMid meet"></svg>
     <script>
         const scheduleId = 1788652800; // TODO: User-selectable schedule
 
@@ -106,16 +114,40 @@
         let firstStopId, secondStopId;
         let secondStops, paths;
 
+        let viewport;
+        const zoom = d3.zoom()
+        .filter(() => {
+            const ev = d3.event;
+            if (ev.target.closest("text")) {
+                return false; // Disable zooming when clicking on text elements
+            }
+            return true;
+        })
+        .on("zoom", () => {
+            if (viewport) {
+                viewport.attr("transform", d3.event.transform);
+            }
+        });
+        const svgMargin = 10;
+
         function resetMap() {
             firstStopMarker?.remove();
             secondStopMarker?.remove();
             firstStopMarker = secondStopMarker = null;
+
             firstStopId = secondStopId = null;
             secondStops = {}, paths = {};
+
             selectedStops.clearLayers();
             allStops.addTo(map);
+
             document.getElementById("reset").style.visibility = "hidden";
             document.getElementById("export-svg").style.visibility = "hidden";
+
+            const svg = d3.select("#dag");
+            svg.selectAll("*").remove();
+            svg.attr("viewBox", null).call(zoom.transform, d3.zoomIdentity);
+            viewport = null;
         }
         document.getElementById("reset").addEventListener("click", resetMap);
         resetMap();
@@ -209,7 +241,6 @@
 
         function renderDAG() {
             const svg = d3.select("#dag");
-            svg.selectAll("*").remove();
 
             svg.append("style").text(`
                 #dag {
@@ -251,7 +282,7 @@
                 }
             `);
 
-            const viewport = svg.append("g");
+            viewport = svg.append("g");
 
             let xOffset = 20;
 
@@ -303,23 +334,8 @@
                 xOffset += + bbox.width + 20;
             }
 
-            const elHeight = document.getElementById("dag").clientHeight;
-            svg
-                .attr("width", xOffset)
-                .attr("height", elHeight)
-                .attr("viewBox", `0 0 ${xOffset} ${elHeight}`);
-
-            const zoom = d3.zoom()
-                .filter(() => {
-                    const ev = d3.event;
-                    if (ev.target.closest("text")) {
-                        return false; // Disable zooming when clicking on text elements
-                    }
-                    return true;
-                })
-                .on("zoom", () => {
-                    viewport.attr("transform", d3.event.transform);
-                });
+            const bbox = viewport.node().getBBox();
+            svg.attr("viewBox", `${bbox.x - svgMargin} ${bbox.y - svgMargin} ${bbox.width + 2 * svgMargin} ${bbox.height + 2 * svgMargin}`);
             svg.call(zoom);
 
             document.getElementById("export-svg").style.visibility = "visible";
@@ -330,13 +346,14 @@
             svgEl.getElementsByTagName("g")[0].removeAttribute("transform");
             svgEl.removeAttribute("style");
 
-            const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            // TODO: Correctly size bgRect to cover the entire SVG content
+            /* const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
             bgRect.setAttribute("x", 0);
             bgRect.setAttribute("y", 0);
             bgRect.setAttribute("width", "100%");
             bgRect.setAttribute("height", "100%");
             bgRect.setAttribute("fill", "#fff");
-            svgEl.insertBefore(bgRect, svgEl.firstChild);
+            svgEl.insertBefore(bgRect, svgEl.firstChild); */
 
             svgEl.querySelectorAll("[marker-start], [marker-mid], [marker-end]").forEach(el => {
                 for (const attr of ["marker-start", "marker-mid", "marker-end"]) {
@@ -351,9 +368,9 @@
             const bbox = svgEl.getBBox();
             document.body.removeChild(svgEl);
 
-            svgEl.setAttribute("viewBox", `${bbox.x - 10} ${bbox.y - 10} ${bbox.width + 20} ${bbox.height + 20}`);
-            svgEl.setAttribute("width", bbox.width + 20);
-            svgEl.setAttribute("height", bbox.height + 20);
+            svgEl.setAttribute("viewBox", `${bbox.x - svgMargin} ${bbox.y - svgMargin} ${bbox.width + 2 * svgMargin} ${bbox.height + 2 * svgMargin}`);
+            svgEl.setAttribute("width", bbox.width + 2 * svgMargin);
+            svgEl.setAttribute("height", bbox.height + 2 * svgMargin);
 
             let source = new XMLSerializer().serializeToString(svgEl);
             source = '<?xml version="1.0" encoding="UTF-8"?>\n' + source.replace(
