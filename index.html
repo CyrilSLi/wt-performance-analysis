@@ -52,9 +52,14 @@
 
         function markerClusterGroup() {
             return new L.markerClusterGroup({
-                maxClusterRadius: 50,
-                spiderfyOnMaxZoom: false,
-                disableClusteringAtZoom: 15,
+                //maxClusterRadius: 50,
+                maxClusterRadius: (zoom) => {
+                    if (zoom >= 15) {
+                        return 0; // Disable clustering at zoom level 15 and above
+                    }
+                    return 50;
+                },
+                // disableClusteringAtZoom: 15,
             });
         }
 
@@ -70,22 +75,39 @@
             shadowAnchor: [0, 0],
             popupAnchor: [0, -10]
         }) */
-        const stopMarker = (stopId, fnName = null) => new L.marker([stops[stopId][1], stops[stopId][2]]).bindPopup(
-            `<b>${stops[stopId][0]}</b><br>Stop ID: <a href="https://winnipegtransit.com/stops/${stopId}" target="_blank" rel="noopener noreferrer">${stopId}</a>` +
-            (fnName ? `<br><button onclick="${fnName}('${stopId}')">Select this stop</button>` : "")
-        );
+        function stopMarker(stopId, fnName = null, dirs = []) {
+            const [stopName, lat, lng] = stops[stopId];
+            const realStopId = stopId % 100000; // Remove the duplicate stop ID prefix
+            const stopDirs = new Set(), stopServs = new Set();
+            dirs.forEach(dir => {
+                stopDirs.add(directions[dir % directions.length]);
+                stopServs.add(Math.floor(dir / directions.length));
+            });
+            return new L.marker([lat, lng]).bindPopup(
+                `<b>${stopName}</b><br>Stop ID: <a href="https://winnipegtransit.com/stops/${realStopId}" target="_blank" rel="noopener noreferrer">${stopId}</a>` +
+                (dirs.length > 0 ? `<br>Routes:<br><ul><li>${[...stopDirs].sort().join("</li><li>")}</li></ul>` : "") +
+                (dirs.length > 0 ? `<br>Services:<br><ul><li>${services.filter((_, i) => stopServs.has(i)).join("</li><li>")}</li></ul>` : "") +
+                (fnName ? `<br><button onclick="${fnName}('${stopId}')">Select this stop</button>` : "")
+            );
+        }
 
         const firstStopIds = new Set(Object.keys(stop_segs));
         const firstStops = Object.fromEntries(Object.entries(window.perfData.stops).filter(([stopId]) => firstStopIds.has(stopId)));
-        allStops.addLayers(Object.keys(firstStops).map(stopId => stopMarker(stopId, "selectFirstStop")));
+        const dirsPerStop = Object.fromEntries(Object.keys(firstStops).map((stopId) => [
+            stopId,
+            [...new Set(Object.values(stop_segs[stopId]).flatMap(Object.keys))]
+        ]));
+        allStops.addLayers(Object.keys(firstStops).map(stopId => stopMarker(stopId, "selectFirstStop", dirsPerStop[stopId])));
 
         let firstStopId, secondStopId;
+        let secondStops, paths;
 
         function resetMap() {
             firstStopMarker?.remove();
             secondStopMarker?.remove();
             firstStopMarker = secondStopMarker = null;
             firstStopId = secondStopId = null;
+            secondStops = {}, paths = {};
             selectedStops.clearLayers();
             allStops.addTo(map);
             document.getElementById("reset").style.visibility = "hidden";
@@ -97,31 +119,35 @@
             map.removeLayer(allStops);
             firstStopMarker = stopMarker(stopId).addTo(map);
             firstStopMarker._icon.style.filter = "hue-rotate(140deg)"; // Change color to red
+            firstStopId = stopId;
 
-            const stopDirs = [...new Set(Object.values(stop_segs[stopId]).flatMap(Object.keys))];
-            console.log(stopDirs, stopDirs.map(dirId => directions[dirId % directions.length]));
-
-            let secondStops = [], searchList = [[stopId, ...stopDirs]];
-            while (searchList.length > 0) {
-                let [currentStop, ...currentDirs] = searchList.pop();
-                if (!stop_segs[currentStop]) {
+            const stack = dirsPerStop[stopId].map(dirId => [stopId, dirId]);
+            const visited = new Set(
+                stack.map(([currStop, dir]) => `${currStop},${dir}`)
+            );
+            while (stack.length > 0) { // DFS to find all {secondStopId: [dir1, dir2, ...]} reachable from firstStopId
+                const [currStop, dir] = stack.pop();
+                if (!stop_segs[currStop]) {
                     continue;
                 }
-                Object.entries(stop_segs[currentStop]).forEach(([toStop, dirs]) => {
-                    currentDirs = new Set(currentDirs);
-                    if (Object.keys(dirs).some(dirId => currentDirs.has(dirId))) {
-                        const nextSearch = [toStop, ...Object.keys(dirs).filter(dirId => currentDirs.has(dirId))];
-                        if (!secondStops.includes(nextSearch.join(","))) {
-                            searchList.push(nextSearch);
-                            secondStops.push(nextSearch.join(","));
-                        }
+                for (const [nextStop, dirs] of Object.entries(stop_segs[currStop])) {
+                    if (!(dir in dirs)) {
+                        continue;
                     }
-                });
-            }
-            secondStops = [...new Set(secondStops.map(s => s.split(",")[0]))];
+                    const stopDirs = secondStops[nextStop] || new Set();
+                    stopDirs.add(dir);
+                    secondStops[nextStop] = stopDirs;
 
-            secondStops.forEach(stopId => {
-                stopMarker(stopId, "selectSecondStop").addTo(selectedStops);
+                    const nextKey = `${nextStop},${dir}`;
+                    if (!visited.has(nextKey)) {
+                        visited.add(nextKey);
+                        stack.push([nextStop, dir]);
+                    }
+                }
+            }
+
+            Object.keys(secondStops).forEach(stopId => {
+                stopMarker(stopId, "selectSecondStop", [...secondStops[stopId]]).addTo(selectedStops);
             });
 
             document.getElementById("reset").style.visibility = "visible";
@@ -131,6 +157,32 @@
             selectedStops.clearLayers();
             secondStopMarker = stopMarker(stopId).addTo(map);
             secondStopMarker._icon.style.filter = "hue-rotate(270deg)"; // Change color to green
+            secondStopId = stopId;
+
+            for (const dir of secondStops[stopId]) { // DFS to find all {dir: [[stop1, stop2], ...]} segments from firstStopId to secondStopId
+                const stack = [[firstStopId, []]], segments = new Set();
+
+                while (stack.length > 0) {
+                    const [currStop, path] = stack.pop();
+                    if (currStop === secondStopId) {
+                        for (const seg of path) {
+                            segments.add(JSON.stringify(seg));
+                        }
+                        continue;
+                    }
+
+                    for (const [nextStop, dirs] of Object.entries(stop_segs[currStop] || {})) {
+                        if (Object.hasOwn(dirs, dir)) {
+                            stack.push([nextStop, [...path, [currStop, nextStop]]]);
+                        }
+                    }
+                }
+                paths[dir] = [...segments].map(seg => JSON.parse(seg));
+            }
+            console.log(Object.fromEntries(Object.entries(paths).map(([dir, segs]) => [
+                directions[dir % directions.length],
+                segs.map(seg => seg.map(stopId => `${stopId} ${stops[stopId][0]}`))
+            ])));
         }
     </script>
 </body>
