@@ -8,52 +8,16 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1/dist/MarkerCluster.Default.min.css">
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1/dist/leaflet.markercluster.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/d3@4/build/d3.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dagre-d3@0.6/dist/dagre-d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@4.13.0/build/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dagre-d3@0.6.4/dist/dagre-d3.min.js"></script>
     <script src=".cache/data.js"></script> <!-- TODO: Replace with actual data source -->
     <style>
-        #dag {
-            display: block;
-            width: 100%;
-            height: 100%;
-            background: white;
-        }
-
-        #dag .node rect {
-            stroke: black;
-            fill: white;
-            stroke-width: 2px;
-        }
-
-        #dag .node text {
-            fill: black;
-            font: 12px sans-serif;
-        }
-
-        #dag .direction-label {
-            fill: black;
-            font: bold 16px sans-serif;
-        }
-
-        #dag .edgePath path {
-            stroke: black;
-            stroke-width: 2px;
-            fill: none;
-        }
-
-        #dag .edgePath marker {
-            fill: black;
-        }
-
-        #dag .edgeLabel {
-            fill: black;
-            font-size: 10px;
-        }
     </style>
 </head>
 <body>
     <H1>WT Performance Analysis</H1>
     <button id="reset">Reset</button>
+    <button id="export-svg">Export SVG</button>
     <div id="map" style="width: 100%; height: 600px;"></div>
     <svg id="dag" style="width: 100%; height: 600px;"></svg>
     <script>
@@ -151,6 +115,7 @@
             selectedStops.clearLayers();
             allStops.addTo(map);
             document.getElementById("reset").style.visibility = "hidden";
+            document.getElementById("export-svg").style.visibility = "hidden";
         }
         document.getElementById("reset").addEventListener("click", resetMap);
         resetMap();
@@ -246,9 +211,49 @@
             const svg = d3.select("#dag");
             svg.selectAll("*").remove();
 
+            svg.append("style").text(`
+                #dag {
+                    display: block;
+                    width: 100%;
+                    height: 100%;
+                    background: white;
+                }
+
+                #dag .node rect {
+                    stroke: black;
+                    fill: white;
+                    stroke-width: 1px;
+                }
+
+                #dag .node text {
+                    fill: black;
+                    font: 12px sans-serif;
+                }
+
+                #dag .direction-label {
+                    fill: black;
+                    font: bold 16px sans-serif;
+                }
+
+                #dag .edgePath path {
+                    stroke: black;
+                    stroke-width: 2px;
+                    fill: none;
+                }
+
+                #dag .edgePath marker {
+                    fill: black;
+                }
+
+                #dag .edgeLabel {
+                    fill: black;
+                    font-size: 10px;
+                }
+            `);
+
             const viewport = svg.append("g");
 
-            let xOffset = 30;
+            let xOffset = 20;
 
             function setNode(graph, stopId) {
                 if (!graph.hasNode(stopId)) {
@@ -256,7 +261,7 @@
                         label: `${stopId} ${stops[stopId][0]}`,
                         rx: 5,
                         ry: 5,
-                        padding: 10
+                        padding: 5
                     });
                 }
             }
@@ -265,10 +270,10 @@
                 const graph = new dagreD3.graphlib.Graph()
                     .setGraph({
                         rankdir: "TB",
-                        nodesep: 35,
-                        ranksep: 65,
-                        marginx: 30,
-                        marginy: 30
+                        nodesep: 20,
+                        ranksep: 40,
+                        marginx: 0,
+                        marginy: 0
                     })
                     .setDefaultEdgeLabel(() => ({}));
 
@@ -281,26 +286,21 @@
                     });
                 }
 
-                const group = viewport.append("g")
-                    .attr("class", "direction")
-                    .attr("transform", `translate(${xOffset}, 0)`);
-
-                const inner = group.append("g")
-                    .attr("transform", "translate(0, 30)");
+                const group = viewport.append("g").attr("class", "direction").attr("transform", `translate(${xOffset}, 0)`);
+                const inner = group.append("g").attr("transform", "translate(0, 10)");
 
                 new dagreD3.render()(inner, graph);
 
-                const bbox = inner.node().getBBox();
+                let bbox = group.node().getBBox();
                 group.append("text")
                     .attr("class", "direction-label")
                     .attr("x", bbox.x + bbox.width / 2)
-                    .attr("y", 20)
                     .attr("text-anchor", "middle")
-                    .text(`[${dir}] ${directions[dir % directions.length]} (${services[Math.floor(dir / directions.length)]})`);
+                    .text(`${directions[dir % directions.length]} (${services[Math.floor(dir / directions.length)]})`);
 
-                const { width, height } = graph.graph();
-
-                xOffset += width + 90;
+                bbox = group.node().getBBox(); // Update bbox after adding the label
+                group.attr("transform", `translate(${xOffset - bbox.x}, 0)`);
+                xOffset += + bbox.width + 20;
             }
 
             const elHeight = document.getElementById("dag").clientHeight;
@@ -321,7 +321,57 @@
                     viewport.attr("transform", d3.event.transform);
                 });
             svg.call(zoom);
+
+            document.getElementById("export-svg").style.visibility = "visible";
         }
+
+        function exportSVG() {
+            const svgEl = document.getElementById("dag").cloneNode(true);
+            svgEl.getElementsByTagName("g")[0].removeAttribute("transform");
+            svgEl.removeAttribute("style");
+
+            const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            bgRect.setAttribute("x", 0);
+            bgRect.setAttribute("y", 0);
+            bgRect.setAttribute("width", "100%");
+            bgRect.setAttribute("height", "100%");
+            bgRect.setAttribute("fill", "#fff");
+            svgEl.insertBefore(bgRect, svgEl.firstChild);
+
+            svgEl.querySelectorAll("[marker-start], [marker-mid], [marker-end]").forEach(el => {
+                for (const attr of ["marker-start", "marker-mid", "marker-end"]) {
+                    const value = el.getAttribute(attr);
+                    if (value) {
+                        el.setAttribute(attr, value.replace(/url\([^#]*#/, "url(#")); // Remove URL prefix for SVG export
+                    }
+                }
+            });
+
+            document.body.appendChild(svgEl);
+            const bbox = svgEl.getBBox();
+            document.body.removeChild(svgEl);
+
+            svgEl.setAttribute("viewBox", `${bbox.x - 10} ${bbox.y - 10} ${bbox.width + 20} ${bbox.height + 20}`);
+            svgEl.setAttribute("width", bbox.width + 20);
+            svgEl.setAttribute("height", bbox.height + 20);
+
+            let source = new XMLSerializer().serializeToString(svgEl);
+            source = '<?xml version="1.0" encoding="UTF-8"?>\n' + source.replace(
+                "<svg", '<svg xmlns="http://www.w3.org/2000/svg"'
+            );
+
+            const blob = new Blob([source], { type: "image/svg+xml" });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `wt_perf_analysis_${firstStopId}_${secondStopId}.svg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+        document.getElementById("export-svg").addEventListener("click", exportSVG);
     </script>
 </body>
 </html>
