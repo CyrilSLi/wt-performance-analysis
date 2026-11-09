@@ -132,12 +132,12 @@
         }
 
         const firstStopIds = new Set(Object.keys(stop_segs));
-        const firstStops = Object.fromEntries(Object.entries(window.perfData.stops).filter(([stopId]) => firstStopIds.has(stopId)));
-        const dirsPerStop = Object.fromEntries(Object.keys(firstStops).map((stopId) => [
+        const fromStops = Object.fromEntries(Object.entries(stops).filter(([stopId]) => firstStopIds.has(stopId)));
+        const dirsPerStop = Object.fromEntries(Object.keys(fromStops).map((stopId) => [
             stopId,
             [...new Set(Object.values(stop_segs[stopId]).flatMap(Object.keys))]
         ]));
-        allStops.addLayers(Object.keys(firstStops).map(stopId => stopMarker(stopId, "selectFirstStop", dirsPerStop[stopId])));
+        allStops.addLayers(Object.keys(fromStops).map(stopId => stopMarker(stopId, "selectFirstStop", dirsPerStop[stopId])));
 
         let firstStopId, secondStopId;
         let secondStops, paths;
@@ -171,12 +171,10 @@
                     continue;
                 }
                 for (const [nextStop, dirs] of Object.entries(stop_segs[currStop])) {
-                    if (!(dir in dirs)) {
+                    if (!Object.hasOwn(dirs, dir)) {
                         continue;
                     }
-                    const stopDirs = secondStops[nextStop] || new Set();
-                    stopDirs.add(dir);
-                    secondStops[nextStop] = stopDirs;
+                    secondStops[nextStop] = (secondStops[nextStop] || new Set()).add(dir);
 
                     const nextKey = `${nextStop},${dir}`;
                     if (!visited.has(nextKey)) {
@@ -200,26 +198,43 @@
             secondStopId = stopId;
 
             for (const dir of secondStops[stopId]) { // DFS to find all {dir: [[stop1, stop2], ...]} segments from firstStopId to secondStopId
-                const stack = [[firstStopId, []]], segments = new Set();
+                const canReachSecondStop = new Set([secondStopId]);
+                const stack = [secondStopId];
+                const reverseAdjacency = {};
+
+                for (const [from, tos] of Object.entries(stop_segs)) {
+                    for (const [to, dirs] of Object.entries(tos)) {
+                        if (Object.hasOwn(dirs, dir)) {
+                            reverseAdjacency[to] = (reverseAdjacency[to] || new Set()).add(from);
+                        }
+                    }
+                }
 
                 while (stack.length > 0) {
-                    const [currStop, path] = stack.pop();
-                    if (currStop === secondStopId) {
-                        for (const seg of path) {
-                            segments.add(JSON.stringify(seg));
+                    const currStop = stack.pop();
+
+                    for (const prevStop of reverseAdjacency[currStop] || []) {
+                        if (!canReachSecondStop.has(prevStop)) {
+                            canReachSecondStop.add(prevStop);
+                            stack.push(prevStop);
                         }
+                    }
+                }
+
+                const segments = [];
+                for (const from of [firstStopId, ...Object.keys(secondStops)]) { // secondStops doesn't include firstStopId so add it manually
+                    if (from !== firstStopId && !secondStops[from].has(dir)) {
                         continue;
                     }
-
-                    for (const [nextStop, dirs] of Object.entries(stop_segs[currStop] || {})) {
-                        if (Object.hasOwn(dirs, dir)) {
-                            stack.push([nextStop, [...path, [currStop, nextStop]]]);
+                    for (const [to, dirs] of Object.entries(stop_segs[from] || {})) {
+                        if (Object.hasOwn(dirs, dir) && canReachSecondStop.has(to)) {
+                            segments.push([from, to]);
                         }
                     }
-                    // console.log(JSON.stringify([...stack]));
                 }
-                paths[dir] = [...segments].map(seg => JSON.parse(seg));
+                paths[dir] = segments;
             }
+
             console.log(Object.fromEntries(Object.entries(paths).map(([dir, segs]) => [
                 directions[dir % directions.length],
                 segs.map(seg => seg.map(stopId => `${stopId} ${stops[stopId][0]}`))
@@ -270,16 +285,18 @@
                     .attr("class", "direction")
                     .attr("transform", `translate(${xOffset}, 0)`);
 
-                group.append("text")
-                    .attr("class", "direction-label")
-                    .attr("x", 30)
-                    .attr("y", 20)
-                    .text(`[${dir}] ${directions[dir % directions.length]} (${services[Math.floor(dir / directions.length)]})`);
-
                 const inner = group.append("g")
                     .attr("transform", "translate(0, 30)");
 
                 new dagreD3.render()(inner, graph);
+
+                const bbox = inner.node().getBBox();
+                group.append("text")
+                    .attr("class", "direction-label")
+                    .attr("x", bbox.x + bbox.width / 2)
+                    .attr("y", 20)
+                    .attr("text-anchor", "middle")
+                    .text(`[${dir}] ${directions[dir % directions.length]} (${services[Math.floor(dir / directions.length)]})`);
 
                 const { width, height } = graph.graph();
 
@@ -292,13 +309,17 @@
                 .attr("height", elHeight)
                 .attr("viewBox", `0 0 ${xOffset} ${elHeight}`);
 
-            // Zoom the outer group, preserving individual graph positions.
             const zoom = d3.zoom()
-                .scaleExtent([0.1, 3])
+                .filter(() => {
+                    const ev = d3.event;
+                    if (ev.target.closest("text")) {
+                        return false; // Disable zooming when clicking on text elements
+                    }
+                    return true;
+                })
                 .on("zoom", () => {
                     viewport.attr("transform", d3.event.transform);
                 });
-
             svg.call(zoom);
         }
     </script>
