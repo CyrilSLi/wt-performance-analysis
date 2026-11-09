@@ -8,16 +8,56 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1/dist/MarkerCluster.Default.min.css">
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1/dist/leaflet.markercluster.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@4/build/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dagre-d3@0.6/dist/dagre-d3.min.js"></script>
     <script src=".cache/data.js"></script> <!-- TODO: Replace with actual data source -->
     <style>
+        #dag {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: white;
+        }
+
+        #dag .node rect {
+            stroke: black;
+            fill: white;
+            stroke-width: 2px;
+        }
+
+        #dag .node text {
+            fill: black;
+            font: 12px sans-serif;
+        }
+
+        #dag .direction-label {
+            fill: black;
+            font: bold 16px sans-serif;
+        }
+
+        #dag .edgePath path {
+            stroke: black;
+            stroke-width: 2px;
+            fill: none;
+        }
+
+        #dag .edgePath marker {
+            fill: black;
+        }
+
+        #dag .edgeLabel {
+            fill: black;
+            font-size: 10px;
+        }
     </style>
 </head>
 <body>
     <H1>WT Performance Analysis</H1>
     <button id="reset">Reset</button>
     <div id="map" style="width: 100%; height: 600px;"></div>
+    <svg id="dag" style="width: 100%; height: 600px;"></svg>
     <script>
-        const scheduleId = 1782000000; // TODO: User-selectable schedule
+        const scheduleId = 1788652800; // TODO: User-selectable schedule
 
         const { directions, services, stop_segs } = window.perfData.schedules[scheduleId];
         const stops = window.perfData.stops;
@@ -176,6 +216,7 @@
                             stack.push([nextStop, [...path, [currStop, nextStop]]]);
                         }
                     }
+                    // console.log(JSON.stringify([...stack]));
                 }
                 paths[dir] = [...segments].map(seg => JSON.parse(seg));
             }
@@ -183,6 +224,82 @@
                 directions[dir % directions.length],
                 segs.map(seg => seg.map(stopId => `${stopId} ${stops[stopId][0]}`))
             ])));
+            renderDAG();
+        }
+
+        function renderDAG() {
+            const svg = d3.select("#dag");
+            svg.selectAll("*").remove();
+
+            const viewport = svg.append("g");
+
+            let xOffset = 30;
+
+            function setNode(graph, stopId) {
+                if (!graph.hasNode(stopId)) {
+                    graph.setNode(stopId, {
+                        label: `${stopId} ${stops[stopId][0]}`,
+                        rx: 5,
+                        ry: 5,
+                        padding: 10
+                    });
+                }
+            }
+
+            for (const [dir, segs] of Object.entries(paths)) {
+                const graph = new dagreD3.graphlib.Graph()
+                    .setGraph({
+                        rankdir: "TB",
+                        nodesep: 35,
+                        ranksep: 65,
+                        marginx: 30,
+                        marginy: 30
+                    })
+                    .setDefaultEdgeLabel(() => ({}));
+
+                for (const [from, to] of segs) {
+                    setNode(graph, from);
+                    setNode(graph, to);
+                    graph.setEdge(from, to, {
+                        curve: d3.curveBasis,
+                        arrowhead: "vee"
+                    });
+                }
+
+                const group = viewport.append("g")
+                    .attr("class", "direction")
+                    .attr("transform", `translate(${xOffset}, 0)`);
+
+                group.append("text")
+                    .attr("class", "direction-label")
+                    .attr("x", 30)
+                    .attr("y", 20)
+                    .text(`[${dir}] ${directions[dir % directions.length]} (${services[Math.floor(dir / directions.length)]})`);
+
+                const inner = group.append("g")
+                    .attr("transform", "translate(0, 30)");
+
+                new dagreD3.render()(inner, graph);
+
+                const { width, height } = graph.graph();
+
+                xOffset += width + 90;
+            }
+
+            const elHeight = document.getElementById("dag").clientHeight;
+            svg
+                .attr("width", xOffset)
+                .attr("height", elHeight)
+                .attr("viewBox", `0 0 ${xOffset} ${elHeight}`);
+
+            // Zoom the outer group, preserving individual graph positions.
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 3])
+                .on("zoom", () => {
+                    viewport.attr("transform", d3.event.transform);
+                });
+
+            svg.call(zoom);
         }
     </script>
 </body>
