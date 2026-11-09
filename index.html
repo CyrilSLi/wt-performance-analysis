@@ -378,14 +378,14 @@
             svgEl.getElementsByTagName("g")[0].removeAttribute("transform");
             svgEl.removeAttribute("style");
 
-            // TODO: Correctly size bgRect to cover the entire SVG content
-            /* const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            bgRect.setAttribute("x", 0);
-            bgRect.setAttribute("y", 0);
-            bgRect.setAttribute("width", "100%");
-            bgRect.setAttribute("height", "100%");
+            const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            const viewBox = svgEl.getAttribute("viewBox").split(" ");
+            bgRect.setAttribute("x", viewBox[0]);
+            bgRect.setAttribute("y", viewBox[1]);
+            bgRect.setAttribute("width", viewBox[2]);
+            bgRect.setAttribute("height", viewBox[3]);
             bgRect.setAttribute("fill", "#fff");
-            svgEl.insertBefore(bgRect, svgEl.firstChild); */
+            svgEl.insertBefore(bgRect, svgEl.firstChild);
 
             svgEl.querySelectorAll("[marker-start], [marker-mid], [marker-end]").forEach(el => {
                 for (const attr of ["marker-start", "marker-mid", "marker-end"]) {
