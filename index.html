@@ -130,6 +130,14 @@
         });
         const svgMargin = 10;
 
+        function resetSVG() {
+            const svg = d3.select("#dag");
+            svg.selectAll("*").remove();
+            svg.attr("viewBox", null).call(zoom.transform, d3.zoomIdentity);
+            viewport = null;
+            return svg;
+        }
+
         function resetMap() {
             firstStopMarker?.remove();
             secondStopMarker?.remove();
@@ -144,10 +152,7 @@
             document.getElementById("reset").style.visibility = "hidden";
             document.getElementById("export-svg").style.visibility = "hidden";
 
-            const svg = d3.select("#dag");
-            svg.selectAll("*").remove();
-            svg.attr("viewBox", null).call(zoom.transform, d3.zoomIdentity);
-            viewport = null;
+            resetSVG();
         }
         document.getElementById("reset").addEventListener("click", resetMap);
         resetMap();
@@ -189,12 +194,14 @@
         }
 
         function selectSecondStop(stopId) {
+            secondStopId = stopId.toString();
             selectedStops.clearLayers();
-            secondStopMarker = stopMarker(stopId).addTo(map);
+            secondStopMarker?.remove();
+            secondStopMarker = stopMarker(secondStopId).addTo(map);
             secondStopMarker._icon.style.filter = "hue-rotate(140deg)"; // Change color to red
-            secondStopId = stopId;
+            paths = {};
 
-            for (const dir of secondStops[stopId]) { // DFS to find all {dir: [[stop1, stop2], ...]} segments from firstStopId to secondStopId
+            for (const dir of secondStops[secondStopId]) { // DFS to find all {dir: [[stop1, stop2], ...]} segments from firstStopId to secondStopId
                 const canReachSecondStop = new Set([secondStopId]);
                 const stack = [secondStopId];
                 const reverseAdjacency = {};
@@ -253,7 +260,7 @@
         }
 
         function renderDAG() {
-            const svg = d3.select("#dag");
+            const svg = resetSVG();
 
             svg.append("style").text(`
                 #dag {
