@@ -155,7 +155,7 @@
         function selectFirstStop(stopId) {
             map.removeLayer(allStops);
             firstStopMarker = stopMarker(stopId).addTo(map);
-            firstStopMarker._icon.style.filter = "hue-rotate(140deg)"; // Change color to red
+            firstStopMarker._icon.style.filter = "hue-rotate(270deg)"; // Change color to green
             firstStopId = stopId;
 
             const stack = dirsPerStop[stopId].map(dirId => [stopId, dirId]);
@@ -191,7 +191,7 @@
         function selectSecondStop(stopId) {
             selectedStops.clearLayers();
             secondStopMarker = stopMarker(stopId).addTo(map);
-            secondStopMarker._icon.style.filter = "hue-rotate(270deg)"; // Change color to green
+            secondStopMarker._icon.style.filter = "hue-rotate(140deg)"; // Change color to red
             secondStopId = stopId;
 
             for (const dir of secondStops[stopId]) { // DFS to find all {dir: [[stop1, stop2], ...]} segments from firstStopId to secondStopId
@@ -232,6 +232,19 @@
                 paths[dir] = segments;
             }
 
+            const middleStops = {};
+            for (const [dir, segs] of Object.entries(paths)) {
+                segs.flat().forEach(stopId => {
+                    if (stopId === firstStopId || stopId === secondStopId) {
+                        return;
+                    }
+                    middleStops[stopId] = (middleStops[stopId] || new Set()).add(dir);
+                });
+            }
+            Object.keys(middleStops).forEach(stopId => {
+                stopMarker(stopId, null, [...middleStops[stopId]]).addTo(selectedStops);
+            });
+
             console.log(Object.fromEntries(Object.entries(paths).map(([dir, segs]) => [
                 directions[dir % directions.length],
                 segs.map(seg => seg.map(stopId => `${stopId} ${stops[stopId][0]}`))
@@ -248,6 +261,11 @@
                     width: 100%;
                     height: 100%;
                     background: white;
+                }
+
+                #dag line {
+                    stroke: black;
+                    stroke-width: 1px;
                 }
 
                 #dag .node rect {
@@ -323,11 +341,25 @@
                 new dagreD3.render()(inner, graph);
 
                 let bbox = group.node().getBBox();
-                group.append("text")
+                const label = group.append("text")
                     .attr("class", "direction-label")
                     .attr("x", bbox.x + bbox.width / 2)
                     .attr("text-anchor", "middle")
                     .text(`${directions[dir % directions.length]} (${services[Math.floor(dir / directions.length)]})`);
+
+                const labelBBox = label.node().getBBox(), gap = 10;
+                if (bbox.width > labelBBox.width + 4 * gap) {
+                    group.append("line")
+                        .attr("x1", bbox.x)
+                        .attr("y1", -5)
+                        .attr("x2", labelBBox.x - gap)
+                        .attr("y2", -5);
+                    group.append("line")
+                        .attr("x1", labelBBox.x + labelBBox.width + gap)
+                        .attr("y1", -5)
+                        .attr("x2", bbox.x + bbox.width)
+                        .attr("y2", -5);
+                }
 
                 bbox = group.node().getBBox(); // Update bbox after adding the label
                 group.attr("transform", `translate(${xOffset - bbox.x}, 0)`);
