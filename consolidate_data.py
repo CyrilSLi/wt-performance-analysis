@@ -32,6 +32,7 @@ for i in glob(".cache/stop_segs-*.json"):
 
     orig_stops = json.load(open(f".cache/stops-{schedule}.json"))
     print(f"{len(stops_used)}/{len(orig_stops)} stops used in schedule {schedule}")
+    print(f"Unused stops: {sorted(int(x) for x in set(orig_stops) - stops_used)}")
     perf_data["stops"].update({stop_id: orig_stops[stop_id] for stop_id in stops_used})
 
 dump = json.dumps(perf_data, separators=(",", ":"), sort_keys=True)
