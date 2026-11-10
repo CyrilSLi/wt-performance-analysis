@@ -64,14 +64,12 @@
 
         function markerClusterGroup() {
             return new L.markerClusterGroup({
-                //maxClusterRadius: 50,
                 maxClusterRadius: (zoom) => {
                     if (zoom >= 15) {
-                        return 0; // Disable clustering at zoom level 15 and above
+                        return 0; // Disable clustering at zoom level >= 15, except if markers have the same exact coordinates
                     }
                     return 50;
                 },
-                // disableClusteringAtZoom: 15,
             });
         }
 
@@ -112,7 +110,7 @@
         allStops.addLayers(Object.keys(fromStops).map(stopId => stopMarker(stopId, "selectFirstStop", dirsPerStop[stopId])));
 
         let firstStopId, secondStopId;
-        let secondStops, paths;
+        let secondStops, paths, longestPaths;
 
         let viewport;
         const zoom = d3.zoom()
@@ -144,7 +142,7 @@
             firstStopMarker = secondStopMarker = null;
 
             firstStopId = secondStopId = null;
-            secondStops = {}, paths = {};
+            secondStops = {}, paths = {}, longestPaths = {};
 
             selectedStops.clearLayers();
             allStops.addTo(map);
@@ -173,7 +171,7 @@
                     continue;
                 }
                 for (const [nextStop, dirs] of Object.entries(stop_segs[currStop])) {
-                    if (!Object.hasOwn(dirs, dir)) {
+                    if (!dirs.hasOwnProperty(dir)) {
                         continue;
                     }
                     secondStops[nextStop] = (secondStops[nextStop] || new Set()).add(dir);
@@ -208,7 +206,7 @@
 
                 for (const [from, tos] of Object.entries(stop_segs)) {
                     for (const [to, dirs] of Object.entries(tos)) {
-                        if (Object.hasOwn(dirs, dir) && filter(dirs[dir])) {
+                        if (dirs.hasOwnProperty(dir) && filter(dirs[dir])) {
                             reverseAdjacency[to] = (reverseAdjacency[to] || new Set()).add(from);
                         }
                     }
@@ -231,7 +229,7 @@
                         continue;
                     }
                     for (const [to, dirs] of Object.entries(stop_segs[from] || {})) {
-                        if (Object.hasOwn(dirs, dir) && canReachSecondStop.has(to) && filter(dirs[dir])) {
+                        if (dirs.hasOwnProperty(dir) && canReachSecondStop.has(to) && filter(dirs[dir])) {
                             segments.push([from, to]);
                         }
                     }
@@ -257,6 +255,7 @@
                 segs.map(seg => seg.map(stopId => `${stopId} ${stops[stopId][0]}`))
             ])));
             renderDAG();
+            console.log(longestPaths);
         }
 
         function renderDAG() {
@@ -346,6 +345,18 @@
                 const inner = group.append("g").attr("transform", "translate(0, 10)");
 
                 new dagreD3.render()(inner, graph);
+
+                if (!longestPaths.hasOwnProperty(dir)) {
+                    const sortedStops = graph.nodes().map(n => [
+                        graph.node(n).label.split(" ", 1)[0], Math.floor(graph.node(n).y / 10)
+                    ]).sort((a, b) => a[1] - b[1]);
+                    if (new Set(sortedStops.map(s => s[1])).size !== sortedStops.length) {
+                        alert("Branching paths not currently supported. Please select a different pair of stops.");
+                        resetMap();
+                        return;
+                    }
+                    longestPaths[dir] = sortedStops.map(s => s[0]);
+                }
 
                 let bbox = group.node().getBBox();
                 const label = group.append("text")
