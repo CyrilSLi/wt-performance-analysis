@@ -193,7 +193,7 @@
             document.getElementById("reset").style.visibility = "visible";
         }
 
-        function selectSecondStop(stopId) {
+        function selectSecondStop(stopId, filter = () => true) { // filter takes stop_segs[from][to][dir] and returns true if the segment should be included
             secondStopId = stopId.toString();
             selectedStops.clearLayers();
             secondStopMarker?.remove();
@@ -208,7 +208,7 @@
 
                 for (const [from, tos] of Object.entries(stop_segs)) {
                     for (const [to, dirs] of Object.entries(tos)) {
-                        if (Object.hasOwn(dirs, dir)) {
+                        if (Object.hasOwn(dirs, dir) && filter(dirs[dir])) {
                             reverseAdjacency[to] = (reverseAdjacency[to] || new Set()).add(from);
                         }
                     }
@@ -231,7 +231,7 @@
                         continue;
                     }
                     for (const [to, dirs] of Object.entries(stop_segs[from] || {})) {
-                        if (Object.hasOwn(dirs, dir) && canReachSecondStop.has(to)) {
+                        if (Object.hasOwn(dirs, dir) && canReachSecondStop.has(to) && filter(dirs[dir])) {
                             segments.push([from, to]);
                         }
                     }
