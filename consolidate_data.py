@@ -20,6 +20,10 @@ for i in glob(".cache/stop_segs-*.json"):
     })
 
     orig_stop_segs = json.load(open(i))
+    if not orig_stop_segs:
+        print(f"No stop segments found for schedule {schedule}, skipping...")
+        continue
+
     stop_segs, stops_used = {}, set()
     for seg_key in orig_stop_segs:
         stop_from, stop_to, dir_index = seg_key.split("-")
