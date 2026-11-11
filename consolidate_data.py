@@ -12,17 +12,17 @@ perf_data = {
 }
 
 for i in glob(".cache/stop_segs-*.json"):
+    orig_stop_segs = json.load(open(i))
+    if not orig_stop_segs:
+        print(f"No stop segments found for schedule {schedule}, skipping...")
+        continue
+
     schedule = int(i.split("-")[-1].split(".")[0])
     schedule_obj = perf_data["schedules"].setdefault(schedule, {
         "services": ["Weekday", "Saturday", "Sunday"],
         "directions": {},
         "stop_segs": {}
     })
-
-    orig_stop_segs = json.load(open(i))
-    if not orig_stop_segs:
-        print(f"No stop segments found for schedule {schedule}, skipping...")
-        continue
 
     stop_segs, stops_used = {}, set()
     for seg_key in orig_stop_segs:
