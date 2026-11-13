@@ -116,7 +116,7 @@
         const zoom = d3.zoom()
         .filter(() => {
             const ev = d3.event;
-            if (ev.target.closest("text")) {
+            if (ev.target.closest("text") || ev.target.closest(".edgeLabel")) {
                 return false; // Disable zooming when clicking on text elements
             }
             return true;
@@ -280,9 +280,10 @@
                     stroke-width: 1px;
                 }
 
-                #dag .node text {
+                #dag .node *, #dag .edgeLabel * {
                     fill: black;
                     font: 12px sans-serif;
+                    background-color: white;
                 }
 
                 #dag .direction-label {
@@ -298,11 +299,6 @@
 
                 #dag .edgePath marker {
                     fill: black;
-                }
-
-                #dag .edgeLabel {
-                    fill: black;
-                    font-size: 10px;
                 }
             `);
 
@@ -337,7 +333,15 @@
                     setNode(graph, to);
                     graph.setEdge(from, to, {
                         curve: d3.curveBasis,
-                        arrowhead: "vee"
+                        arrowhead: "vee",
+                        label: Object.values(stop_segs[from][to][dir]).reduce((acc, val) => {
+                            val.split("|").forEach(hour => {
+                                if (hour.length > 0) {
+                                    acc += hour.split(",").length;
+                                }
+                            });
+                            return acc;
+                        }, 0)
                     });
                 }
 
