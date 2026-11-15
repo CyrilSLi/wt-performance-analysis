@@ -381,7 +381,9 @@
                     selectedData.filteredSegs[key] = filteredSegs;
                     medianTimes[key] = d3.median(filteredSegs.map(seg => seg[3])); // seg[3] is the time
                 });
-                const edgeColorScale = d3.scaleSequential(d3.interpolateViridis).domain(d3.extent(Object.values(medianTimes)).reverse());
+
+                const domain = d3.extent(Object.values(medianTimes).filter(v => v >= 0)).reverse(); // Ignore negative (erroneous) times for color scaling
+                const edgeColorScale = d3.scaleSequential(d3.interpolateViridis).domain(domain);
                 
                 for (const [from, to] of segs) {
                     const key = segKey(from, to, dir);
@@ -407,7 +409,7 @@
                     graph.setEdge(from, to, {
                         curve: d3.curveBasis,
                         arrowhead: "vee",
-                        label: edgeStats.join("-"),
+                        label: edgeStats.join(" "),
                         tooltip: `${edgeStats[0]} rows, ${edgeStats[1]} unique trips, ${edgeStats[2]} unique days, ${edgeStats[3]} hours, median time ${edgeStats[4]}`,
                         style: `stroke: ${edgeColorScale(medianTimes[key])};`
                     });
