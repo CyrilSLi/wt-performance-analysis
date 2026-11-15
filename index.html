@@ -384,22 +384,32 @@
                 const edgeColorScale = d3.scaleSequential(d3.interpolateViridis).domain(d3.extent(Object.values(medianTimes)).reverse());
                 
                 for (const [from, to] of segs) {
-                    const filteredSegs = selectedData.filteredSegs[segKey(from, to, dir)];
+                    const key = segKey(from, to, dir);
+                    const filteredSegs = selectedData.filteredSegs[key];
 
                     setNode(graph, from);
                     setNode(graph, to);
 
+                    const unique = [new Set(), new Set(), new Set()];
+                    for (const seg of filteredSegs) {
+                        unique[0].add(seg[0]);
+                        unique[1].add(seg[1]);
+                        unique[2].add(seg[2]);
+                    }
                     const edgeStats = [
                         filteredSegs.length,
-                        ...Array.from({ length: 3 }, (_, i) => new Set(filteredSegs.map(seg => seg[i]))).map(s => s.size),
-                        medianTimes[segKey(from, to, dir)] + "s"
+                        unique[0].size,
+                        unique[1].size,
+                        unique[2].size,
+                        medianTimes[key] + "s"
                     ];
+
                     graph.setEdge(from, to, {
                         curve: d3.curveBasis,
                         arrowhead: "vee",
                         label: edgeStats.join("-"),
                         tooltip: `${edgeStats[0]} rows, ${edgeStats[1]} unique trips, ${edgeStats[2]} unique days, ${edgeStats[3]} hours, median time ${edgeStats[4]}`,
-                        style: `stroke: ${edgeColorScale(medianTimes[segKey(from, to, dir)])};`
+                        style: `stroke: ${edgeColorScale(medianTimes[key])};`
                     });
                 }
 
