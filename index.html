@@ -8,17 +8,30 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1/dist/MarkerCluster.Default.min.css">
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1/dist/leaflet.markercluster.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/d3@4.13.0/build/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@5.16.0/dist/d3.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dagre-d3@0.6.4/dist/dagre-d3.min.js"></script>
     <script src=".cache/data.js"></script> <!-- TODO: Replace with actual data source -->
     <style>
-        #map {
-            width: 100%;
-            height: 600px;
+        * {
+            touch-action: manipulation;
+            margin: 0px;
+            padding: 0px;
+            font-weight: normal;
+            border: none;
+            font-family: arial, sans-serif;
+            color: black;
+            box-sizing: border-box;
         }
-        #dag {
-            width: 100% !important;
-            height: 600px !important;
+        body {
+            width: 100%;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+        #map, #dag {
+            flex: 1;
+            width: 100%;
         }
     </style>
 </head>
@@ -26,6 +39,7 @@
     <H1>WT Performance Analysis</H1>
     <button id="reset">Reset</button>
     <button id="export-svg">Export SVG</button>
+    <input type="number" id="min-trip-count" placeholder="Min trip count" value="1" min="1">
     <div id="map"></div>
     <svg id="dag" preserveAspectRatio="xMidYMid meet"></svg>
     <script>
@@ -110,28 +124,28 @@
         allStops.addLayers(Object.keys(fromStops).map(stopId => stopMarker(stopId, "selectFirstStop", dirsPerStop[stopId])));
 
         let firstStopId, secondStopId;
-        let secondStops, paths, longestPaths;
+        let secondStops, paths, selectedData;
 
         let viewport;
-        const zoom = d3.zoom()
-        .filter(() => {
-            const ev = d3.event;
-            if (ev.target.closest("text") || ev.target.closest(".edgeLabel")) {
-                return false; // Disable zooming when clicking on text elements
-            }
-            return true;
-        })
-        .on("zoom", () => {
-            if (viewport) {
-                viewport.attr("transform", d3.event.transform);
-            }
-        });
+        const d3zoom = d3.zoom()
+            .filter(() => {
+                const ev = d3.event;
+                if (ev.target.closest("text") && ["mousedown", "dblclick"].includes(ev.type)) {
+                    return false; // Disable zooming when double-clicking on text elements
+                }
+                return true;
+            })
+            .on("zoom", () => {
+                if (viewport) {
+                    viewport.attr("transform", d3.event.transform);
+                }
+            });
         const svgMargin = 10;
 
         function resetSVG() {
             const svg = d3.select("#dag");
             svg.selectAll("*").remove();
-            svg.attr("viewBox", null).call(zoom.transform, d3.zoomIdentity);
+            svg.attr("viewBox", null).call(d3zoom.transform, d3.zoomIdentity);
             viewport = null;
             return svg;
         }
@@ -142,7 +156,7 @@
             firstStopMarker = secondStopMarker = null;
 
             firstStopId = secondStopId = null;
-            secondStops = {}, paths = {}, longestPaths = {};
+            secondStops = {}, paths = {}, selectedData = {};
 
             selectedStops.clearLayers();
             allStops.addTo(map);
@@ -191,6 +205,26 @@
             document.getElementById("reset").style.visibility = "visible";
         }
 
+        function filterSegs(segs, verify = false) { // Filter takes stop_segs[from][to][dir] and returns [[tripId, day, hour, time], ...]
+            // TODO: Implement filtering logic based on user input (e.g., time of day, day of week, etc.)
+            const filteredSegs = [];
+            for (const [day, hours] of Object.entries(segs)) {
+                hours.split("|").forEach((timeTrips, hour) => {
+                    if (timeTrips.length > 0) {
+                        timeTrips.split(",").forEach(timeTrip => {
+                            const [time, tripId] = timeTrip.split("_");
+                            // TODO: filtering logic here
+                            if (verify) {
+                                return true;
+                            }
+                            filteredSegs.push([tripId, parseInt(day), hour, parseInt(time)]);
+                        });
+                    }
+                });
+            }
+            return filteredSegs;
+        }
+
         function selectSecondStop(stopId, filter = () => true) { // filter takes stop_segs[from][to][dir] and returns true if the segment should be included
             secondStopId = stopId.toString();
             selectedStops.clearLayers();
@@ -206,7 +240,7 @@
 
                 for (const [from, tos] of Object.entries(stop_segs)) {
                     for (const [to, dirs] of Object.entries(tos)) {
-                        if (dirs.hasOwnProperty(dir) && filter(dirs[dir])) {
+                        if (dirs.hasOwnProperty(dir) && filterSegs(dirs[dir], true)) {
                             reverseAdjacency[to] = (reverseAdjacency[to] || new Set()).add(from);
                         }
                     }
@@ -229,7 +263,7 @@
                         continue;
                     }
                     for (const [to, dirs] of Object.entries(stop_segs[from] || {})) {
-                        if (dirs.hasOwnProperty(dir) && canReachSecondStop.has(to) && filter(dirs[dir])) {
+                        if (dirs.hasOwnProperty(dir) && canReachSecondStop.has(to) && filter(dirs[dir], true)) {
                             segments.push([from, to]);
                         }
                     }
@@ -255,10 +289,16 @@
                 segs.map(seg => seg.map(stopId => `${stopId} ${stops[stopId][0]}`))
             ])));
             renderDAG();
-            console.log(longestPaths);
         }
 
-        function renderDAG() {
+        document.getElementById("min-trip-count").addEventListener("input", () => {
+            if (secondStopId) {
+                renderDAG();
+            }
+        });
+
+        function renderDAG() { // Side effect: sets selectedData
+            selectedData = { filteredSegs: {}, longestPaths: {} };
             const svg = resetSVG();
 
             svg.append("style").text(`
@@ -266,7 +306,6 @@
                     display: block;
                     width: 100%;
                     height: 100%;
-                    background: white;
                 }
 
                 #dag line {
@@ -280,24 +319,26 @@
                     stroke-width: 1px;
                 }
 
-                #dag .node *, #dag .edgeLabel * {
+                #dag .label, #dag .edgeLabel {
                     fill: black;
-                    font: 12px sans-serif;
-                    background-color: white;
+                    font: 12px Arial, Liberation Sans, sans-serif;
+                    stroke: white;
+                    stroke-width: 4px;
+                    stroke-linejoin: round;
+                    paint-order: stroke fill;
                 }
 
                 #dag .direction-label {
                     fill: black;
-                    font: bold 16px sans-serif;
+                    font: bold 16px Arial, Liberation Sans, sans-serif;
                 }
 
                 #dag .edgePath path {
-                    stroke: black;
                     stroke-width: 2px;
                     fill: none;
                 }
 
-                #dag .edgePath marker {
+                #dag .edgePath marker path {
                     fill: black;
                 }
             `);
@@ -317,6 +358,10 @@
                 }
             }
 
+            const segKey = (from, to, dir) => `${from}-${to}-${dir}`;
+
+            const minTripCount = parseInt(document.getElementById("min-trip-count").value) || 0;
+
             for (const [dir, segs] of Object.entries(paths)) {
                 const graph = new dagreD3.graphlib.Graph()
                     .setGraph({
@@ -328,39 +373,50 @@
                     })
                     .setDefaultEdgeLabel(() => ({}));
 
+                const medianTimes = {};
+                segs.forEach(([from, to]) => {
+                    const key = segKey(from, to, dir);
+                    const filteredSegs = filterSegs(stop_segs[from][to][dir]);
+                    selectedData.filteredSegs[key] = filteredSegs;
+                    medianTimes[key] = d3.median(filteredSegs.map(seg => seg[3])); // seg[3] is the time
+                });
+                const edgeColorScale = d3.scaleSequential(d3.interpolateViridis).domain(d3.extent(Object.values(medianTimes)).reverse());
+                
                 for (const [from, to] of segs) {
+                    const filteredSegs = selectedData.filteredSegs[segKey(from, to, dir)];
+
                     setNode(graph, from);
                     setNode(graph, to);
-                    graph.setEdge(from, to, {
-                        curve: d3.curveBasis,
-                        arrowhead: "vee",
-                        label: Object.values(stop_segs[from][to][dir]).reduce((acc, val) => {
-                            val.split("|").forEach(hour => {
-                                if (hour.length > 0) {
-                                    acc += hour.split(",").length;
-                                }
-                            });
-                            return acc;
-                        }, 0)
-                    });
+
+                    if (filteredSegs.length >= minTripCount) {
+                        const edgeStats = [
+                            filteredSegs.length,
+                            ...Array.from({ length: 3 }, (_, i) => new Set(filteredSegs.map(seg => seg[i]))).map(s => s.size),
+                            medianTimes[segKey(from, to, dir)] + "s"
+                        ];
+                        graph.setEdge(from, to, {
+                            curve: d3.curveBasis,
+                            arrowhead: "vee",
+                            label: edgeStats.join("-"),
+                            tooltip: `${edgeStats[0]} rows, ${edgeStats[1]} unique trips, ${edgeStats[2]} unique days, ${edgeStats[3]} hours, median time ${edgeStats[4]}`,
+                            style: `stroke: ${edgeColorScale(medianTimes[segKey(from, to, dir)])};`
+                        });
+                    }
                 }
 
                 const group = viewport.append("g").attr("class", "direction").attr("transform", `translate(${xOffset}, 0)`);
                 const inner = group.append("g").attr("transform", "translate(0, 10)");
-
                 new dagreD3.render()(inner, graph);
 
-                if (!longestPaths.hasOwnProperty(dir)) {
-                    const sortedStops = graph.nodes().map(n => [
-                        graph.node(n).label.split(" ", 1)[0], Math.floor(graph.node(n).y / 10)
-                    ]).sort((a, b) => a[1] - b[1]);
-                    if (new Set(sortedStops.map(s => s[1])).size !== sortedStops.length) {
-                        alert("Branching paths not currently supported. Please select a different pair of stops.");
-                        resetMap();
-                        return;
-                    }
-                    longestPaths[dir] = sortedStops.map(s => s[0]);
+                const sortedStops = graph.nodes().map(n => [
+                    graph.node(n).label.split(" ", 1)[0], Math.floor(graph.node(n).y / 10)
+                ]).sort((a, b) => a[1] - b[1]);
+                if (new Set(sortedStops.map(s => s[1])).size !== sortedStops.length) {
+                    alert("Branching paths not currently supported. Please select a different pair of stops.");
+                    // resetMap();
+                    // return;
                 }
+                selectedData.longestPaths[dir] = sortedStops.map(s => s[0]);
 
                 let bbox = group.node().getBBox();
                 const label = group.append("text")
@@ -386,13 +442,17 @@
                 bbox = group.node().getBBox(); // Update bbox after adding the label
                 group.attr("transform", `translate(${xOffset - bbox.x}, 0)`);
                 xOffset += + bbox.width + 20;
+
+                inner.selectAll("g.edgeLabel text").append("title").text(v => graph.edge(v).tooltip);
             }
 
             const bbox = viewport.node().getBBox();
             svg.attr("viewBox", `${bbox.x - svgMargin} ${bbox.y - svgMargin} ${bbox.width + 2 * svgMargin} ${bbox.height + 2 * svgMargin}`);
-            svg.call(zoom);
+            svg.call(d3zoom);
 
             document.getElementById("export-svg").style.visibility = "visible";
+
+            console.log(selectedData); // TODO: Remove this line after debugging
         }
 
         function exportSVG() {
