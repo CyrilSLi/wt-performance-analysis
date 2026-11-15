@@ -207,25 +207,31 @@
 
         function filterSegs(segs, verify = false) { // Filter takes stop_segs[from][to][dir] and returns [[tripId, day, hour, time], ...]
             // TODO: Implement filtering logic based on user input (e.g., time of day, day of week, etc.)
+
+            const minTripCount = parseInt(document.getElementById("min-trip-count").value) || 0;
+
             const filteredSegs = [];
             for (const [day, hours] of Object.entries(segs)) {
-                hours.split("|").forEach((timeTrips, hour) => {
-                    if (timeTrips.length > 0) {
-                        timeTrips.split(",").forEach(timeTrip => {
-                            const [time, tripId] = timeTrip.split("_");
-                            // TODO: filtering logic here
-                            if (verify) {
-                                return true;
-                            }
-                            filteredSegs.push([tripId, parseInt(day), hour, parseInt(time)]);
-                        });
+                for (const [hour, timeTrips] of hours.split("|").entries()) {
+                    if (timeTrips.length === 0) {
+                        continue;
                     }
-                });
+                    for (const timeTrip of timeTrips.split(",")) {
+                        const [time, tripId] = timeTrip.split("_");
+
+                        // TODO: filtering logic here
+                        filteredSegs.push([tripId, parseInt(day), hour, parseInt(time)]);
+
+                        if (verify && filteredSegs.length >= minTripCount) {
+                            return true;
+                        }
+                    };
+                }
             }
-            return filteredSegs;
+            return verify ? false : filteredSegs; // Verify failed if early return did not happen
         }
 
-        function selectSecondStop(stopId, filter = () => true) { // filter takes stop_segs[from][to][dir] and returns true if the segment should be included
+        function selectSecondStop(stopId) { // filter takes stop_segs[from][to][dir] and returns true if the segment should be included
             secondStopId = stopId.toString();
             selectedStops.clearLayers();
             secondStopMarker?.remove();
@@ -263,7 +269,7 @@
                         continue;
                     }
                     for (const [to, dirs] of Object.entries(stop_segs[from] || {})) {
-                        if (dirs.hasOwnProperty(dir) && canReachSecondStop.has(to) && filter(dirs[dir], true)) {
+                        if (dirs.hasOwnProperty(dir) && canReachSecondStop.has(to) && filterSegs(dirs[dir], true)) {
                             segments.push([from, to]);
                         }
                     }
@@ -291,11 +297,8 @@
             renderDAG();
         }
 
-        document.getElementById("min-trip-count").addEventListener("input", () => {
-            if (secondStopId) {
-                renderDAG();
-            }
-        });
+        // Re-filter segments and re-render DAG
+        document.getElementById("min-trip-count").addEventListener("input", () => secondStopId && selectSecondStop(secondStopId));
 
         function renderDAG() { // Side effect: sets selectedData
             selectedData = { filteredSegs: {}, longestPaths: {} };
@@ -360,8 +363,6 @@
 
             const segKey = (from, to, dir) => `${from}-${to}-${dir}`;
 
-            const minTripCount = parseInt(document.getElementById("min-trip-count").value) || 0;
-
             for (const [dir, segs] of Object.entries(paths)) {
                 const graph = new dagreD3.graphlib.Graph()
                     .setGraph({
@@ -388,20 +389,18 @@
                     setNode(graph, from);
                     setNode(graph, to);
 
-                    if (filteredSegs.length >= minTripCount) {
-                        const edgeStats = [
-                            filteredSegs.length,
-                            ...Array.from({ length: 3 }, (_, i) => new Set(filteredSegs.map(seg => seg[i]))).map(s => s.size),
-                            medianTimes[segKey(from, to, dir)] + "s"
-                        ];
-                        graph.setEdge(from, to, {
-                            curve: d3.curveBasis,
-                            arrowhead: "vee",
-                            label: edgeStats.join("-"),
-                            tooltip: `${edgeStats[0]} rows, ${edgeStats[1]} unique trips, ${edgeStats[2]} unique days, ${edgeStats[3]} hours, median time ${edgeStats[4]}`,
-                            style: `stroke: ${edgeColorScale(medianTimes[segKey(from, to, dir)])};`
-                        });
-                    }
+                    const edgeStats = [
+                        filteredSegs.length,
+                        ...Array.from({ length: 3 }, (_, i) => new Set(filteredSegs.map(seg => seg[i]))).map(s => s.size),
+                        medianTimes[segKey(from, to, dir)] + "s"
+                    ];
+                    graph.setEdge(from, to, {
+                        curve: d3.curveBasis,
+                        arrowhead: "vee",
+                        label: edgeStats.join("-"),
+                        tooltip: `${edgeStats[0]} rows, ${edgeStats[1]} unique trips, ${edgeStats[2]} unique days, ${edgeStats[3]} hours, median time ${edgeStats[4]}`,
+                        style: `stroke: ${edgeColorScale(medianTimes[segKey(from, to, dir)])};`
+                    });
                 }
 
                 const group = viewport.append("g").attr("class", "direction").attr("transform", `translate(${xOffset}, 0)`);
