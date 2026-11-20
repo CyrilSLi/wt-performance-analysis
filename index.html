@@ -212,7 +212,7 @@
         let secondStops, paths, selectedData;
 
         function resetFilters() {
-            document.getElementById("min-trip-count").value = 1;
+            document.getElementById("min-trip-count").value = 2; // 1 contains too many outliers
             document.getElementById("min-hour").value = 3;
             document.getElementById("max-hour").value = 26;
             document.getElementById("min-day").value = document.getElementById("min-day").min;
