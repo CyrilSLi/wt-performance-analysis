@@ -22,24 +22,94 @@
             color: black;
             box-sizing: border-box;
         }
+
         body {
             width: 100%;
             height: 100vh;
             height: 100dvh;
             display: flex;
             flex-direction: column;
+            padding: 10px;
+            gap: 10px;
         }
+
+        b, h1 {
+            font-weight: bold;
+        }
+
+        label {
+            margin: auto 0px;
+        }
+
+        header, fieldset {
+            display: flex;
+            white-space: nowrap;
+        }
+
+        header {
+            gap: 10px;
+        }
+
+        fieldset {
+            gap: 5px;
+        }
+
         #map, #dag {
             flex: 1;
             width: 100%;
         }
+
+        h1 {
+            font-size: 24px;
+        }
+
+        button, input {
+            font-size: 16px;
+            background-color: #eee;
+            border: 1px solid black;
+            border-radius: 5px;
+            padding: 3px 5px;
+        }
+
+        input:invalid {
+            border-color: red;
+            background-color: #f88;
+        }
+
+        input[type="number"] {
+            field-sizing: content;
+            min-width: 3em;
+        }
+
+        @supports not (field-sizing: content) {
+            input[type="number"] {
+                width: 4em;
+            }
+        }
+
+        button {
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
-    <H1>WT Performance Analysis</H1>
-    <button id="reset">Reset</button>
-    <button id="export-svg">Export SVG</button>
-    <input type="number" id="min-trip-count" placeholder="Min trip count" value="1" min="1">
+    <header>
+        <h1>WT Performance Analysis</h1>
+        <button id="reset">Reset</button>
+        <button id="export-svg">Export SVG</button>
+    </header>
+    <fieldset>
+        <label for="min-trip-count">Min trip count:</label>
+        <input type="number" id="min-trip-count" value="1" min="1">
+        <label for="min-hour">, Hour:</label>
+        <input type="number" id="min-hour" value="3" min="3" max="26">
+        <label for="max-hour">to</label>
+        <input type="number" id="max-hour" value="26" min="3" max="26">
+        <label for="min-day">, Day:</label>
+        <input type="date" id="min-day" value="2017-01-01" min="2017-01-01" max="2044-05-18">
+        <label for="max-day">to</label>
+        <input type="date" id="max-day" value="2043-12-31" min="2017-01-01" max="2044-05-18">
+    </fieldset>
     <div id="map"></div>
     <svg id="dag" preserveAspectRatio="xMidYMid meet"></svg>
     <script>
@@ -123,6 +193,19 @@
         ]));
         allStops.addLayers(Object.keys(fromStops).map(stopId => stopMarker(stopId, "selectFirstStop", dirsPerStop[stopId])));
 
+        const dayOffset = 1483228800000; // 2017-01-01
+        const daySet = new Set();
+        Object.values(stop_segs).forEach(tos => Object.values(tos).forEach(dirs => Object.values(dirs).forEach(segs => Object.keys(segs).forEach(day => {
+            daySet.add(day);
+        }))));
+        const minDay = Math.min(...daySet), maxDay = Math.max(...daySet);
+        [["min-day", minDay], ["max-day", maxDay]].forEach(([id, day]) => {
+            const dateEl = document.getElementById(id);
+            [["min", minDay], ["max", maxDay], ["value", day]].forEach(([attr, val]) => {
+                dateEl[attr] = new Date(dayOffset + val * 86400000).toISOString().slice(0, 10);
+            });
+        });
+
         let firstStopId, secondStopId;
         let secondStops, paths, selectedData;
 
@@ -150,7 +233,13 @@
             return svg;
         }
 
-        function resetMap() {
+        function resetMap(resetURL = true) {
+            if (resetURL) {
+                const url = new URL(window.location.href);
+                url.search = "";
+                window.history.replaceState({}, "", url);
+            }
+
             firstStopMarker?.remove();
             secondStopMarker?.remove();
             firstStopMarker = secondStopMarker = null;
@@ -166,8 +255,8 @@
 
             resetSVG();
         }
-        document.getElementById("reset").addEventListener("click", resetMap);
-        resetMap();
+        document.getElementById("reset").addEventListener("click", () => resetMap());
+        resetMap(false);
 
         function selectFirstStop(stopId) {
             map.removeLayer(allStops);
@@ -209,11 +298,24 @@
             // TODO: Implement filtering logic based on user input (e.g., time of day, day of week, etc.)
 
             const minTripCount = parseInt(document.getElementById("min-trip-count").value) || 0;
+            const minHour = parseInt(document.getElementById("min-hour").value) || 3;
+            const maxHour = parseInt(document.getElementById("max-hour").value) || 26;
+
+            // Days since 2017-01-01
+            const minDayStr = document.getElementById("min-day").value;
+            const maxDayStr = document.getElementById("max-day").value;
+            const minDayFilter = minDayStr ? (Date.UTC(+minDayStr.slice(0, 4), +minDayStr.slice(5, 7) - 1, +minDayStr.slice(8, 10)) - dayOffset) / 86400000 : minDay;
+            const maxDayFilter = maxDayStr ? (Date.UTC(+maxDayStr.slice(0, 4), +maxDayStr.slice(5, 7) - 1, +maxDayStr.slice(8, 10)) - dayOffset) / 86400000 : maxDay;
 
             const filteredSegs = [];
             for (const [day, hours] of Object.entries(segs)) {
-                for (const [hour, timeTrips] of hours.split("|").entries()) {
-                    if (timeTrips.length === 0) {
+                for (const [index, timeTrips] of hours.split("|").entries()) {
+                    const hour = index + 3; // service day: 03:00 to 26:00
+                    if (
+                        timeTrips.length === 0 ||
+                        hour < minHour || hour > maxHour ||
+                        day < minDayFilter || day > maxDayFilter
+                    ) {
                         continue;
                     }
                     for (const timeTrip of timeTrips.split(",")) {
@@ -295,10 +397,23 @@
                 segs.map(seg => seg.map(stopId => `${stopId} ${stops[stopId][0]}`))
             ])));
             renderDAG();
+
+            const url = new URL(window.location.href);
+            url.searchParams.set("firstStop", firstStopId);
+            url.searchParams.set("secondStop", secondStopId);
+            window.history.replaceState({}, "", url);
         }
 
         // Re-filter segments and re-render DAG
-        document.getElementById("min-trip-count").addEventListener("input", () => secondStopId && selectSecondStop(secondStopId));
+        const filterTimeouts = {};
+        ["min-trip-count", "min-hour", "max-hour", "min-day", "max-day"].forEach(id => {
+            document.getElementById(id).addEventListener("input", () => {
+                if (secondStopId) {
+                    clearTimeout(filterTimeouts[id]);
+                    filterTimeouts[id] = setTimeout(() => selectSecondStop(secondStopId), 500);
+                }
+            });
+        });
 
         function renderDAG() { // Side effect: sets selectedData
             selectedData = { filteredSegs: {}, longestPaths: {} };
@@ -329,6 +444,10 @@
                     stroke-width: 4px;
                     stroke-linejoin: round;
                     paint-order: stroke fill;
+                }
+
+                #dag .edgeLabel {
+                    cursor: help;
                 }
 
                 #dag .direction-label {
@@ -514,6 +633,15 @@
             URL.revokeObjectURL(url);
         }
         document.getElementById("export-svg").addEventListener("click", exportSVG);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has("firstStop") && urlParams.has("secondStop")) {
+            const firstStop = urlParams.get("firstStop"), secondStop = urlParams.get("secondStop");
+            if (stops.hasOwnProperty(firstStop) && stops.hasOwnProperty(secondStop)) {
+                selectFirstStop(firstStop);
+                selectSecondStop(secondStop);
+            }
+        }
     </script>
 </body>
 </html>
