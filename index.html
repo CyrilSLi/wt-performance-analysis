@@ -37,7 +37,7 @@
             font-weight: bold;
         }
 
-        label {
+        header > *, fieldset > * {
             margin: auto 0px;
         }
 
@@ -97,18 +97,20 @@
         <h1>WT Performance Analysis</h1>
         <button id="reset">Reset</button>
         <button id="export-svg">Export SVG</button>
+        <p id="processing">Processing...</p>
     </header>
     <fieldset>
+        <button id="reset-filters">Reset Filters</button>
         <label for="min-trip-count">Min trip count:</label>
-        <input type="number" id="min-trip-count" value="1" min="1">
+        <input type="number" id="min-trip-count" min="1">
         <label for="min-hour">, Hour:</label>
-        <input type="number" id="min-hour" value="3" min="3" max="26">
+        <input type="number" id="min-hour" min="3" max="26">
         <label for="max-hour">to</label>
-        <input type="number" id="max-hour" value="26" min="3" max="26">
+        <input type="number" id="max-hour" min="3" max="26">
         <label for="min-day">, Day:</label>
-        <input type="date" id="min-day" value="2017-01-01" min="2017-01-01" max="2044-05-18">
+        <input type="date" id="min-day" min="2017-01-01" max="2044-05-18">
         <label for="max-day">to</label>
-        <input type="date" id="max-day" value="2043-12-31" min="2017-01-01" max="2044-05-18">
+        <input type="date" id="max-day" min="2017-01-01" max="2044-05-18">
     </fieldset>
     <div id="map"></div>
     <svg id="dag" preserveAspectRatio="xMidYMid meet"></svg>
@@ -209,6 +211,19 @@
         let firstStopId, secondStopId;
         let secondStops, paths, selectedData;
 
+        function resetFilters() {
+            document.getElementById("min-trip-count").value = 1;
+            document.getElementById("min-hour").value = 3;
+            document.getElementById("max-hour").value = 26;
+            document.getElementById("min-day").value = document.getElementById("min-day").min;
+            document.getElementById("max-day").value = document.getElementById("max-day").max;
+            if (secondStopId) {
+                selectSecondStop(secondStopId);
+            }
+        };
+        document.getElementById("reset-filters").addEventListener("click", resetFilters);
+        resetFilters();
+
         let viewport;
         const d3zoom = d3.zoom()
             .filter(() => {
@@ -250,8 +265,9 @@
             selectedStops.clearLayers();
             allStops.addTo(map);
 
-            document.getElementById("reset").style.visibility = "hidden";
-            document.getElementById("export-svg").style.visibility = "hidden";
+            ["reset", "export-svg", "processing"].forEach(id => {
+                document.getElementById(id).style.visibility = "hidden";
+            });
 
             resetSVG();
         }
@@ -334,6 +350,10 @@
         }
 
         function selectSecondStop(stopId) { // filter takes stop_segs[from][to][dir] and returns true if the segment should be included
+            document.getElementById("processing").style.visibility = "visible";
+            console.log(`Selecting second stop ${stopId}...`);
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+
             secondStopId = stopId.toString();
             selectedStops.clearLayers();
             secondStopMarker?.remove();
@@ -402,6 +422,9 @@
             url.searchParams.set("firstStop", firstStopId);
             url.searchParams.set("secondStop", secondStopId);
             window.history.replaceState({}, "", url);
+
+            document.getElementById("processing").style.visibility = "hidden";
+            }));
         }
 
         // Re-filter segments and re-render DAG
@@ -416,6 +439,7 @@
         });
 
         function renderDAG() { // Side effect: sets selectedData
+            console.log("Rendering DAG...");
             selectedData = { filteredSegs: {}, longestPaths: {} };
             const svg = resetSVG();
 
