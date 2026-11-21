@@ -45,7 +45,7 @@
             white-space: nowrap;
         }
 
-        body, header, #map-dag-container {
+        body, header, #data-operations, div.row {
             gap: 10px;
         }
 
@@ -53,11 +53,11 @@
             gap: 5px;
         }
 
-        #map-dag-container {
+        div.row {
             display: flex;
         }
 
-        #map-dag-container, #table, #map-dag-container > * {
+        div.row, div.row > * {
             flex: 1;
             min-height: 0px;
             min-width: 0px;
@@ -100,7 +100,10 @@
     <header>
         <h1>WT Performance Analysis</h1>
         <button id="reset">Reset</button>
-        <button id="export-svg">Export SVG</button>
+        <span id="data-operations">
+            <button id="export-svg">Export SVG</button>
+            <button id="cycle-chart">Cycle Chart</button>
+        </span>
         <p id="processing">Processing...</p>
     </header>
     <fieldset>
@@ -116,11 +119,14 @@
         <label for="max-day">to</label>
         <input type="date" id="max-day" min="2017-01-01" max="2044-05-18">
     </fieldset>
-    <div id="map-dag-container">
+    <div class="row">
         <div id="map"></div>
         <svg id="dag" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
-    <div id="table">
+    <div class="row">
+        <div id="chart"></div>
+        <div id="table"></div>
+    </div>
     <script>
         const scheduleId = 1788652800; // TODO: User-selectable schedule
 
@@ -272,7 +278,7 @@
             selectedStops.clearLayers();
             allStops.addTo(map);
 
-            ["reset", "export-svg", "processing"].forEach(id => {
+            ["reset", "data-operations", "processing"].forEach(id => {
                 document.getElementById(id).style.visibility = "hidden";
             });
 
@@ -403,7 +409,9 @@
                         }
                     }
                 }
-                paths[dir] = segments;
+                if (segments.length > 0) {
+                    paths[dir] = segments;
+                }
             }
 
             const middleStops = {};
@@ -419,10 +427,6 @@
                 stopMarker(stopId, null, [...middleStops[stopId]]).addTo(selectedStops);
             });
 
-            console.log(Object.fromEntries(Object.entries(paths).map(([dir, segs]) => [
-                directions[dir % directions.length],
-                segs.map(seg => seg.map(stopId => `${stopId} ${stops[stopId][0]}`))
-            ])));
             renderDAG();
 
             const url = new URL(window.location.href);
@@ -431,6 +435,7 @@
             window.history.replaceState({}, "", url);
 
             document.getElementById("processing").style.visibility = "hidden";
+            document.getElementById("data-operations").style.visibility = "visible";
             }));
         }
 
@@ -591,10 +596,7 @@
                 }
 
                 selectedData.longestPaths[dir] = longestPath.reverse();
-                longestPath.forEach((stopId) => {
-                    console.log(graph.node(stopId));
-                    graph.node(stopId).style = "stroke: black;"; // Only highlight nodes not on the longest path
-                });
+                longestPath.forEach((stopId) => graph.node(stopId).style = "stroke: black;"); // Only highlight nodes not on the longest path
                 new dagreD3.render()(inner, graph);
 
                 let bbox = group.node().getBBox();
@@ -628,8 +630,6 @@
             const bbox = viewport.node().getBBox();
             svg.attr("viewBox", `${bbox.x - svgMargin} ${bbox.y - svgMargin} ${bbox.width + 2 * svgMargin} ${bbox.height + 2 * svgMargin}`);
             svg.call(d3zoom);
-
-            document.getElementById("export-svg").style.visibility = "visible";
 
             console.log(selectedData); // TODO: Remove this line after debugging
         }
